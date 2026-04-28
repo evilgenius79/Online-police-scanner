@@ -1,0 +1,27 @@
+[Unit]
+Description=Online police scanner (capture + web UI)
+After=sound.target network-online.target
+Wants=sound.target
+
+[Service]
+Type=simple
+# Edit these to match your install:
+User=orangepi
+Group=audio
+WorkingDirectory=/home/orangepi/Online-police-scanner
+Environment="SCANNER_DATA_DIR=/home/orangepi/Online-police-scanner"
+Environment="SCANNER_WEB_HOST=0.0.0.0"
+Environment="SCANNER_WEB_PORT=8000"
+# Set to your USB mic index from `python -m scanner devices`:
+# Environment="SCANNER_INPUT_DEVICE=1"
+ExecStart=/home/orangepi/Online-police-scanner/.venv/bin/python -m scanner run
+Restart=on-failure
+RestartSec=3
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/orangepi/Online-police-scanner
+
+[Install]
+WantedBy=multi-user.target

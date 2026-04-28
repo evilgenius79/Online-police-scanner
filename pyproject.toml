@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scanner"
+version = "0.1.0"
+description = "Online police scanner with VAD-based clip recording for Orange Pi 4 Pro (A733)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.12",
+    "aiofiles>=24.1",
+    "sounddevice>=0.5",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "webrtcvad-wheels>=2.0.14",
+]
+
+[project.scripts]
+scanner = "scanner.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["scanner*"]
+
+[tool.setuptools.package-data]
+"scanner.web" = ["templates/*.html", "static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

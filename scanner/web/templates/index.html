@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Online Police Scanner</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>Scanner clips</h1>
+    <form method="get" action="/" class="filters">
+      <label>Date <input type="date" name="date" value="{{ date }}"></label>
+      <label>Search notes <input type="search" name="q" value="{{ q }}" placeholder="FTS5 query"></label>
+      <button type="submit">Apply</button>
+      <a href="/">reset</a>
+    </form>
+  </header>
+
+  {% if not clips %}
+    <p class="empty">No clips yet. If capture is running, talk into the mic or wait for scanner traffic.</p>
+  {% endif %}
+
+  <ul class="clips">
+    {% for c in clips %}
+      <li class="clip">
+        <div class="meta">
+          <span class="when">{{ c.started_iso }}</span>
+          <span class="dur">{{ "%.1f"|format(c.duration_s) }}s</span>
+          <span class="lvl">peak {{ "%.2f"|format(c.peak) }} &middot; rms {{ "%.3f"|format(c.rms) }}</span>
+          <span class="path">{{ c.path }}</span>
+        </div>
+        <audio controls preload="none" src="/audio/{{ c.id }}"></audio>
+        <form method="post" action="/clips/{{ c.id }}/notes" class="notes">
+          <textarea name="notes" rows="2" placeholder="notes (searchable)">{{ c.notes }}</textarea>
+          <button type="submit">save</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+</body>
+</html>
