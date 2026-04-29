@@ -1,9 +1,0 @@
-fastapi>=0.115
-uvicorn[standard]>=0.32
-jinja2>=3.1
-python-multipart>=0.0.12
-aiofiles>=24.1
-sounddevice>=0.5
-numpy>=1.26
-scipy>=1.11
-webrtcvad-wheels>=2.0.14

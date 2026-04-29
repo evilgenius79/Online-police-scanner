@@ -1,106 +1,153 @@
-# Online Police Scanner
+# 🚔 Online Police Scanner
 
-VAD-based scanner-audio recorder with a tiny web UI. Designed for an Orange Pi
-4 Pro (Allwinner A733, aarch64) fed by a USB sound card or USB mic plugged
-into a discriminator / line-out from your scanner.
+A sleek, real-time web interface for a hardware police scanner running on **Orange Pi 4 Pro** (or any Linux SBC).
 
-## What it does
+![Dark scanner UI with spectrum analyzer, activity log, and channel list](https://placeholder)
 
-1. Captures mono 16 kHz / 16-bit PCM from a USB input via PortAudio.
-2. Splits the stream into 30 ms frames and runs WebRTC VAD on each.
-3. When ~150 ms of voice is seen, opens a clip with ~0.5 s of pre-roll.
-4. When ~2 s of silence follows, closes the clip with ~0.3 s of post-roll.
-5. Writes the clip as a WAV under `clips/YYYY-MM-DD/HHMMSS_ffffff.wav` and
-   indexes it (path, time, duration, peak, RMS, notes) in SQLite + FTS5.
-6. Serves a small FastAPI page to browse, play, search-by-notes and delete
-   clips on your LAN.
+## Features
 
-## Quick start (Orange Pi 4 Pro / Armbian / Ubuntu)
+| Feature | Description |
+|---|---|
+| 🔴 Live stream | Real-time MP3 audio from your physical scanner via HTTP |
+| 📊 Spectrum analyzer | Canvas-based FFT visualizer with peak hold |
+| 〰️ Waveform display | Time-domain oscilloscope view |
+| 📡 Signal meter | 24-bar VU meter with green/amber/red zones |
+| ⚡ Transmission alerts | Auto-detects active voice (VAD), flashes header banner |
+| 📋 Activity log | Timestamped log of all transmissions |
+| 👂 Listener count | Live count of connected clients via Socket.io |
+| ⏺ Browser recording | One-click WebM clip capture, saved to Downloads |
+| 📂 Server-side clips | Browse and download clips saved on the server |
+| 📻 Channel display | Configurable channel list with frequency labels |
+| ⌨️ Keyboard shortcuts | Space, M, R, C, F, ?, ↑↓ volume |
+| 📱 Responsive | Adapts from desktop to mobile |
+| 🔗 Share button | Copy URL or use native share sheet on mobile |
+| 🖥️ Fullscreen mode | Immersive kiosk-friendly view |
+
+---
+
+## Requirements
+
+- **Node.js ≥ 18**
+- **ffmpeg** with `libmp3lame` support
+- Audio input (3.5mm, USB audio adapter, etc.)
+- Linux (ALSA) — tested on Orange Pi 4 Pro with Armbian
+
+---
+
+## Quick Start
 
 ```bash
-git clone <this repo> Online-police-scanner
-cd Online-police-scanner
-./scripts/install.sh
-# log out / back in once for the audio group to take effect
+# 1. Install Node.js (if needed)
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo bash -
+sudo apt install -y nodejs ffmpeg
 
-source .venv/bin/activate
-python -m scanner devices                  # find your USB input index
-SCANNER_INPUT_DEVICE=1 python -m scanner run
-# browse at http://<pi-ip>:8000
+# 2. Install dependencies
+npm install
+
+# 3. Find your audio device
+arecord -l          # list capture devices  e.g. "card 1, device 0" → hw:1,0
+
+# 4. Edit config.json
+nano config.json    # set audioDevice, scannerName, location, channels
+
+# 5. Start
+npm start
+# → http://localhost:3000
 ```
 
-If your USB device doesn't support 16 kHz natively, set
-`SCANNER_INPUT_RATE=48000` and the capture loop will downsample with
-`scipy.signal.resample_poly`.
+---
 
-## Run as a service
+## Configuration (`config.json`)
+
+```jsonc
+{
+  "port": 3000,
+  "audioDevice": "hw:1,0",      // ALSA device (from arecord -l)
+  "bitrate": "128k",             // MP3 stream bitrate
+  "sampleRate": 44100,
+
+  "signalThreshold": -45,        // dBFS above which = active transmission
+  "silenceTimeout": 2000,        // ms of silence before ending a transmission
+
+  "scannerName": "City Police Scanner",
+  "location": "Your City, State",
+
+  "channels": [
+    {
+      "id": 1,
+      "name": "Police Dispatch",
+      "frequency": "155.340 MHz",
+      "department": "City PD",
+      "active": true
+    }
+  ]
+}
+```
+
+---
+
+## Run as a systemd Service
 
 ```bash
-sudo cp systemd/scanner.service /etc/systemd/system/
-sudoedit /etc/systemd/system/scanner.service   # set User, paths, device idx
+# Copy files to /opt/police-scanner
+sudo mkdir /opt/police-scanner
+sudo cp -r . /opt/police-scanner
+sudo npm --prefix /opt/police-scanner install
+
+# Create service user
+sudo useradd -r -s /bin/false -G audio scanner
+
+# Install service
+sudo cp systemd/scanner-web.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now scanner
-journalctl -u scanner -f
+sudo systemctl enable --now scanner-web
+
+# Logs
+journalctl -fu scanner-web
 ```
 
-## Configuration
+---
 
-All knobs live in `scanner/config.py`. The audio + VAD constants are tuned
-for squelched scanner audio (clean silence between transmissions); change
-`VAD_AGGRESSIVENESS` (0–3) first if you get false triggers or missed clips.
-
-| env var                  | default     | meaning                                    |
-| ------------------------ | ----------- | ------------------------------------------ |
-| `SCANNER_DATA_DIR`       | `.`         | parent for `clips/` and `scanner.db`       |
-| `SCANNER_INPUT_DEVICE`   | unset       | PortAudio index or name substring          |
-| `SCANNER_INPUT_RATE`     | `16000`     | native input rate; resampled if != 16000   |
-| `SCANNER_WEB_HOST`       | `127.0.0.1` | bind address (set to `0.0.0.0` for LAN)    |
-| `SCANNER_WEB_PORT`       | `8000`      | web port                                   |
-| `SCANNER_LOG_LEVEL`      | `INFO`      | python logging level                       |
-
-## Hardware notes
-
-- Disable hardware AGC on the USB device if possible — AGC during squelched
-  silence will inflate noise and confuse the VAD.
-- A line-level feed from the scanner's discriminator/tape-out is far better
-  than an open mic in the room.
-- USB audio class devices appear under PortAudio; `python -m scanner
-  devices` lists them. If you don't see your card, check `arecord -l` and
-  that your user is in the `audio` group.
-
-## Maintenance
-
-```bash
-python scripts/prune_clips.py --days 30 --dry-run
-python scripts/prune_clips.py --days 30
-```
-
-## Layout
+## Architecture
 
 ```
-scanner/
-  config.py     # constants + env overrides
-  audio.py      # InputStream + resampler + frame chunker
-  vad.py        # VADSlicer state machine
-  writer.py     # WAV writer + PCM stats
-  db.py         # SQLite + FTS5 schema and helpers
-  pipeline.py   # mic -> VAD -> file + db
-  cli.py        # devices | capture | serve | run
-  web/app.py    # FastAPI UI + JSON API
-scripts/
-  install.sh
-  prune_clips.py
-systemd/
-  scanner.service
-tests/          # unit tests for VAD + writer + DB
+[Police Scanner] ──3.5mm──> [Orange Pi 4 Pro ALSA]
+                                     │
+                           ┌─────────┴──────────┐
+                           │     server.js        │
+                           │  (Express + Socket.io)│
+                           │                      │
+                           │  ┌──────────────┐    │
+                           │  │ ffmpeg stream │    │  → GET /stream (MP3 chunked HTTP)
+                           │  └──────────────┘    │
+                           │  ┌──────────────┐    │
+                           │  │ level monitor │    │  → Socket.io signal events
+                           │  └──────────────┘    │
+                           └──────────┬───────────┘
+                                      │
+                              [ Browser clients ]
+                              Web Audio API + Canvas
 ```
 
-## Tests
+---
 
-```bash
-pip install pytest
-pytest -q
-```
+## API Endpoints
 
-The VAD tests stub `webrtcvad` so they run anywhere; the audio capture
-itself is hardware-dependent and not covered by automated tests.
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/stream` | Live MP3 audio stream |
+| `GET` | `/api/status` | JSON status (live, listeners, signal, etc.) |
+| `GET` | `/api/log` | Recent activity log entries |
+| `GET` | `/api/clips` | List server-side recorded clips |
+| `GET` | `/api/clips/:name` | Download a clip |
+| `DELETE` | `/api/clips/:name` | Delete a clip |
+
+## Socket.io Events (server → client)
+
+| Event | Payload | Description |
+|---|---|---|
+| `init` | full state | Sent on first connect |
+| `status` | `{live}` | Stream up/down |
+| `signal` | `{level, active}` | Audio level (0–100) + VAD flag |
+| `listeners` | `{count}` | Listener count changed |
+| `activity` | log entry | New activity log entry |
