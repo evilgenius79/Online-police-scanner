@@ -234,6 +234,42 @@ body::before {
 .status-lbl.online  { color: var(--green); }
 .status-lbl.offline { color: var(--text-dim); }
 
+/* ── Scanner Info Bar ── */
+.sib {
+  display: flex; align-items: center;
+  padding: 5px 14px;
+  background: rgba(4, 10, 20, .92);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; overflow: hidden;
+}
+.sib-cell {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 0 12px; min-width: 0; flex: 1;
+}
+.sib-cell-right { flex: 0 0 auto; }
+.sib-key {
+  font-family: var(--font-mono); font-size: 8px;
+  color: var(--text-dim); letter-spacing: 1.5px;
+}
+.sib-val {
+  font-family: var(--font-mono); font-size: 11px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: color .3s;
+}
+.sib-val.live { color: var(--green); text-shadow: 0 0 8px var(--green-glow); }
+.sib-divider { width: 1px; height: 28px; flex-shrink: 0; background: var(--border); }
+.sib-serial-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--text-dim); flex-shrink: 0; margin-left: 12px;
+  transition: all .3s;
+}
+.sib-serial-dot.online { background: var(--green); box-shadow: 0 0 8px var(--green-glow); }
+.sib-serial-dot.error  { background: var(--red);   box-shadow: 0 0 6px var(--red-glow); }
+
+/* tx-flash info span */
+.tx-flash-sep  { opacity: .5; }
+.tx-flash-info { font-size: 10px; font-weight: 400; letter-spacing: 1px; opacity: .9; font-family: var(--font-mono); }
+
 .tx-flash {
   display: flex; align-items: center; gap: 7px;
   padding: 4px 14px;

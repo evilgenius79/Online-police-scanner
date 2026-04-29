@@ -58,7 +58,10 @@
           <span class="status-lbl" id="status-lbl">CONNECTING</span>
         </div>
         <div class="tx-flash hidden" id="tx-flash">
-          <span class="tx-flash-dot"></span>TRANSMISSION
+          <span class="tx-flash-dot"></span>
+          <span class="tx-flash-label">TRANSMISSION</span>
+          <span class="tx-flash-sep" id="tx-sep">|</span>
+          <span class="tx-flash-info" id="tx-chan-info"></span>
         </div>
       </div>
 
@@ -145,6 +148,35 @@
 
       <!-- Center: visualizer + controls -->
       <main class="center">
+
+        <!-- Scanner info bar (populated from serial data) -->
+        <div class="sib" id="sib">
+          <div class="sib-cell" title="System">
+            <span class="sib-key">SYS</span>
+            <span class="sib-val" id="sib-sys">—</span>
+          </div>
+          <div class="sib-divider"></div>
+          <div class="sib-cell" title="Group / Talkgroup">
+            <span class="sib-key">GROUP</span>
+            <span class="sib-val" id="sib-grp">—</span>
+          </div>
+          <div class="sib-divider"></div>
+          <div class="sib-cell" title="Channel name">
+            <span class="sib-key">CHANNEL</span>
+            <span class="sib-val" id="sib-chn">—</span>
+          </div>
+          <div class="sib-divider"></div>
+          <div class="sib-cell" title="Modulation">
+            <span class="sib-key">MODE</span>
+            <span class="sib-val" id="sib-mod">—</span>
+          </div>
+          <div class="sib-divider"></div>
+          <div class="sib-cell sib-cell-right" title="P25 NAC">
+            <span class="sib-key">NAC</span>
+            <span class="sib-val" id="sib-nac">—</span>
+          </div>
+          <div class="sib-serial-dot" id="sib-serial" title="Scanner serial connection"></div>
+        </div>
 
         <!-- Visualizer -->
         <div class="viz-wrap">

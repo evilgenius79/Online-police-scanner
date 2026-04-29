@@ -1,14 +1,14 @@
 'use strict';
 
 const express = require('express');
-const http = require('http');
+const http    = require('http');
 const { Server } = require('socket.io');
-const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
-const os = require('os');
+const { spawn }  = require('child_process');
+const path  = require('path');
+const fs    = require('fs');
+const os    = require('os');
 
-// ── Config ──────────────────────────────────────────────────────────────────
+// ── Config ────────────────────────────────────────────────────────────────────
 let config;
 try {
   config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
@@ -16,15 +16,15 @@ try {
   config = {};
 }
 
-const PORT           = config.port           ?? 3000;
-const AUDIO_DEVICE   = config.audioDevice    ?? 'hw:1,0';
-const BITRATE        = config.bitrate        ?? '128k';
-const SAMPLE_RATE    = config.sampleRate     ?? 44100;
-const SIG_THRESHOLD  = config.signalThreshold ?? -45;   // dBFS — above = active transmission
-const SILENCE_MS     = config.silenceTimeout  ?? 2000;  // ms of silence before ending transmission
-const CLIPS_DIR      = path.join(__dirname, 'clips');
+const PORT          = config.port           ?? 3000;
+const AUDIO_DEVICE  = config.audioDevice    ?? 'hw:1,0';
+const BITRATE       = config.bitrate        ?? '128k';
+const SAMPLE_RATE   = config.sampleRate     ?? 44100;
+const SIG_THRESHOLD = config.signalThreshold ?? -45;  // dBFS (only used when no serial)
+const SILENCE_MS    = config.silenceTimeout  ?? 2000;
+const CLIPS_DIR     = path.join(__dirname, 'clips');
 
-// ── App setup ────────────────────────────────────────────────────────────────
+// ── App setup ─────────────────────────────────────────────────────────────────
 const app    = express();
 const server = http.createServer(app);
 const io     = new Server(server, {
@@ -38,23 +38,27 @@ app.use(express.static(path.join(__dirname, 'public')));
 if (!fs.existsSync(CLIPS_DIR)) fs.mkdirSync(CLIPS_DIR, { recursive: true });
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let streamProc        = null;
-let levelProc         = null;
-const streamClients   = new Set();
-let isLive            = false;
-let signalLevel       = 0;        // 0–100
+let streamProc         = null;
+let levelProc          = null;
+const streamClients    = new Set();
+let isLive             = false;
+let signalLevel        = 0;
 let activeTransmission = false;
 let transmissionCount  = 0;
 let silenceTimer       = null;
 const startTime        = Date.now();
-const activityLog      = [];       // newest first, max 200
+const activityLog      = [];
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// Scanner serial state
+let scannerConnected = false;
+let scannerData      = null;   // latest GLG parse
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function logActivity(type, message, extra = {}) {
   const entry = {
     id:      Date.now().toString(36) + Math.random().toString(36).slice(2),
     time:    new Date().toISOString(),
-    type,    // 'tx' | 'info' | 'warn' | 'error'
+    type,
     message,
     ...extra,
   };
@@ -66,7 +70,72 @@ function logActivity(type, message, extra = {}) {
 
 function broadcast(event, data) { io.emit(event, data); }
 
-// ── Audio stream (ffmpeg → MP3 → HTTP chunked) ────────────────────────────────
+// ── Scanner Serial Integration ────────────────────────────────────────────────
+let ScannerSerial;
+try { ScannerSerial = require('./scanner-serial'); } catch { /* module missing */ }
+
+let scanner = null;
+
+if (config.scannerPort && ScannerSerial) {
+  scanner = new ScannerSerial({
+    scannerPort:   config.scannerPort,
+    scannerBaud:   config.scannerBaud   ?? 115200,
+    pollInterval:  config.pollInterval  ?? 300,
+  });
+
+  scanner.on('connected', () => {
+    scannerConnected = true;
+    broadcast('scannerStatus', { connected: true });
+    logActivity('info', `Scanner serial connected on ${config.scannerPort}`);
+  });
+
+  scanner.on('disconnected', () => {
+    scannerConnected = false;
+    broadcast('scannerStatus', { connected: false });
+    logActivity('warn', 'Scanner serial disconnected – retrying…');
+  });
+
+  scanner.on('error', msg => {
+    logActivity('error', `Scanner serial: ${msg}`);
+  });
+
+  scanner.on('channel', data => {
+    scannerData = data;
+    broadcast('scanner', data);
+
+    // Use hardware squelch as the authoritative transmission detector.
+    // This replaces the ffmpeg-level VAD when serial is available.
+    const wasActive = activeTransmission;
+
+    if (data.squelch && !wasActive) {
+      activeTransmission = true;
+      transmissionCount++;
+      const label = buildLabel(data);
+      logActivity('tx', `TX: ${label}`, { count: transmissionCount, channel: data });
+      broadcast('signal', { level: signalLevel, active: true });
+
+    } else if (!data.squelch && wasActive) {
+      activeTransmission = false;
+      broadcast('signal', { level: signalLevel, active: false });
+    }
+  });
+
+  scanner.start();
+} else {
+  if (config.scannerPort && !ScannerSerial) {
+    console.warn('[serial] scannerPort set but serialport module not installed.');
+    console.warn('[serial] Run: npm install serialport');
+  } else {
+    console.log('[serial] No scannerPort configured – serial integration disabled.');
+  }
+}
+
+function buildLabel(d) {
+  return [d.channelName, d.groupName, d.systemName, d.frequency]
+    .filter(Boolean).join(' › ') || 'Unknown channel';
+}
+
+// ── Audio Stream ──────────────────────────────────────────────────────────────
 function startStream() {
   if (streamProc) return;
 
@@ -74,14 +143,14 @@ function startStream() {
     '-hide_banner', '-loglevel', 'quiet',
     '-f', 'alsa', '-i', AUDIO_DEVICE,
     '-acodec', 'libmp3lame',
-    '-b:a',  BITRATE,
-    '-ar',   String(SAMPLE_RATE),
-    '-ac',   '1',
-    '-f',    'mp3',
+    '-b:a', BITRATE,
+    '-ar', String(SAMPLE_RATE),
+    '-ac', '1',
+    '-f', 'mp3',
     'pipe:1',
   ];
 
-  console.log('[stream] Starting:', 'ffmpeg', args.join(' '));
+  console.log('[stream] Starting ffmpeg…');
   streamProc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
 
   streamProc.stdout.on('data', chunk => {
@@ -91,17 +160,15 @@ function startStream() {
   });
 
   streamProc.on('close', code => {
-    console.log(`[stream] closed (code ${code}) – restarting in 3 s`);
-    streamProc = null;
-    isLive     = false;
+    console.log(`[stream] ffmpeg closed (${code}) – restarting in 3 s`);
+    streamProc = null; isLive = false;
     broadcast('status', { live: false });
     setTimeout(startStream, 3000);
   });
 
   streamProc.on('error', err => {
-    console.error('[stream] error:', err.message);
-    streamProc = null;
-    isLive     = false;
+    console.error('[stream] ffmpeg error:', err.message);
+    streamProc = null; isLive = false;
     broadcast('status', { live: false });
     logActivity('error', `Stream error: ${err.message}`);
     setTimeout(startStream, 5000);
@@ -113,8 +180,15 @@ function startStream() {
   console.log('[stream] Live on /stream');
 }
 
-// ── Level monitor (separate ffmpeg → astats → stderr parsing) ────────────────
+// ── Level Monitor (ffmpeg VAD — only active when serial is NOT available) ─────
 function startLevelMonitor() {
+  // If we have a serial connection, the scanner's squelch signal is far more
+  // accurate than dBFS analysis, so skip the second ffmpeg process.
+  if (scanner) {
+    console.log('[level] Serial VAD active — skipping ffmpeg level monitor');
+    return;
+  }
+
   if (levelProc) return;
 
   const args = [
@@ -137,7 +211,6 @@ function startLevelMonitor() {
       if (!m) continue;
 
       const rms = parseFloat(m[1]);
-      // Map [-60, 0] dBFS → [0, 100]
       signalLevel = Math.max(0, Math.min(100, Math.round(((rms + 60) / 60) * 100)));
 
       const isActive = rms > SIG_THRESHOLD;
@@ -148,12 +221,10 @@ function startLevelMonitor() {
           transmissionCount++;
           logActivity('tx', 'Transmission detected', { count: transmissionCount });
         }
-        clearTimeout(silenceTimer);
-        silenceTimer = null;
+        clearTimeout(silenceTimer); silenceTimer = null;
       } else if (activeTransmission && !silenceTimer) {
         silenceTimer = setTimeout(() => {
-          activeTransmission = false;
-          silenceTimer       = null;
+          activeTransmission = false; silenceTimer = null;
           broadcast('signal', { level: signalLevel, active: false });
         }, SILENCE_MS);
       }
@@ -163,7 +234,7 @@ function startLevelMonitor() {
   });
 
   levelProc.on('close', code => {
-    console.log(`[level] closed (code ${code}) – restarting in 3 s`);
+    console.log(`[level] monitor closed (${code}) – restarting in 3 s`);
     levelProc = null;
     setTimeout(startLevelMonitor, 3000);
   });
@@ -175,15 +246,13 @@ function startLevelMonitor() {
   });
 }
 
-// ── Routes ────────────────────────────────────────────────────────────────────
+// ── HTTP Routes ───────────────────────────────────────────────────────────────
 
-// Live MP3 stream
 app.get('/stream', (req, res) => {
   res.setHeader('Content-Type', 'audio/mpeg');
   res.setHeader('Cache-Control', 'no-cache, no-store');
   res.setHeader('Transfer-Encoding', 'chunked');
   res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
   streamClients.add(res);
@@ -197,7 +266,6 @@ app.get('/stream', (req, res) => {
   });
 });
 
-// Status / health
 app.get('/api/status', (req, res) => {
   res.json({
     live: isLive,
@@ -207,9 +275,15 @@ app.get('/api/status', (req, res) => {
     transmissionCount,
     uptime: Math.floor((Date.now() - startTime) / 1000),
     scanner: {
-      name:     config.scannerName ?? 'Police Scanner',
-      location: config.location   ?? 'Unknown',
-      channels: config.channels   ?? [],
+      name:      config.scannerName ?? 'Police Scanner',
+      location:  config.location   ?? 'Unknown',
+      channels:  config.channels   ?? [],
+    },
+    serial: {
+      enabled:   !!scanner,
+      connected: scannerConnected,
+      port:      config.scannerPort ?? null,
+      data:      scannerData,
     },
     system: {
       hostname: os.hostname(),
@@ -221,13 +295,11 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// Activity log
 app.get('/api/log', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit ?? '50', 10), 200);
   res.json(activityLog.slice(0, limit));
 });
 
-// Clips list
 app.get('/api/clips', (req, res) => {
   try {
     const files = fs.readdirSync(CLIPS_DIR)
@@ -238,12 +310,9 @@ app.get('/api/clips', (req, res) => {
       })
       .sort((a, b) => b.created - a.created);
     res.json(files);
-  } catch {
-    res.json([]);
-  }
+  } catch { res.json([]); }
 });
 
-// Serve individual clip
 app.get('/api/clips/:name', (req, res) => {
   const name = path.basename(req.params.name);
   const fp   = path.join(CLIPS_DIR, name);
@@ -251,7 +320,6 @@ app.get('/api/clips/:name', (req, res) => {
   res.download(fp);
 });
 
-// Delete clip
 app.delete('/api/clips/:name', (req, res) => {
   const name = path.basename(req.params.name);
   const fp   = path.join(CLIPS_DIR, name);
@@ -275,6 +343,12 @@ io.on('connection', socket => {
       name:     config.scannerName ?? 'Police Scanner',
       location: config.location   ?? 'Unknown',
       channels: config.channels   ?? [],
+    },
+    serial: {
+      enabled:   !!scanner,
+      connected: scannerConnected,
+      port:      config.scannerPort ?? null,
+      data:      scannerData,
     },
   });
 });

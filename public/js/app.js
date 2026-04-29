@@ -24,6 +24,14 @@ const S = {
   idleRafId:    null,
 };
 
+// ═══════════════════════════════════════════════════════════ STATE (extra)
+// S already declared above; extend it here
+Object.assign(S, {
+  serialEnabled:   false,
+  serialConnected: false,
+  lastScannerData: null,
+});
+
 // ═══════════════════════════════════════════════════════════ DOM REFS
 const $ = id => document.getElementById(id);
 const D = {
@@ -60,6 +68,17 @@ const D = {
   sysDevice:     $('sys-device'),
   sysBitrate:    $('sys-bitrate'),
   sysLoad:       $('sys-load'),
+  // Scanner info bar
+  sibSys:        $('sib-sys'),
+  sibGrp:        $('sib-grp'),
+  sibChn:        $('sib-chn'),
+  sibMod:        $('sib-mod'),
+  sibNac:        $('sib-nac'),
+  sibSerial:     $('sib-serial'),
+  sibBar:        $('sib'),
+  // TX flash extras
+  txChanInfo:    $('tx-chan-info'),
+  txSep:         $('tx-sep'),
   activityLog:   $('activity-log'),
   btnClearLog:   $('btn-clear-log'),
   modalClips:    $('modal-clips'),
@@ -175,6 +194,22 @@ function initSocket() {
       [...data.log].reverse().forEach(addLog);
     }
 
+    // Serial / scanner state
+    if (data.serial) {
+      S.serialEnabled   = data.serial.enabled;
+      S.serialConnected = data.serial.connected;
+      updateSerialDot();
+      D.sysDevice.textContent = data.serial.enabled
+        ? (data.serial.connected ? '✓ serial connected' : '✗ serial offline')
+        : 'no serial configured';
+      if (data.serial.data) {
+        S.lastScannerData = data.serial.data;
+        updateScannerInfoBar(data.serial.data);
+        updateFreqFromScanner(data.serial.data);
+        matchChannelInList(data.serial.data);
+      }
+    }
+
     // System info from first init call to /api/status
     fetchStatus();
   });
@@ -204,6 +239,20 @@ function initSocket() {
       D.statTx.textContent = entry.count;
     }
     addLog(entry);
+  });
+
+  // ── Scanner serial events ──
+  socket.on('scanner', data => {
+    S.lastScannerData = data;
+    updateScannerInfoBar(data);
+    updateFreqFromScanner(data);
+    matchChannelInList(data);
+  });
+
+  socket.on('scannerStatus', d => {
+    S.serialConnected = d.connected;
+    updateSerialDot();
+    D.sysDevice.textContent = d.connected ? '✓ serial connected' : '✗ serial offline';
   });
 }
 
@@ -647,6 +696,75 @@ function drawWaveform() {
     x === 0 ? WC.moveTo(x, y) : WC.lineTo(x, y);
   }
   WC.stroke();
+}
+
+// ═══════════════════════════════════════════════════ SCANNER DATA DISPLAY
+
+function updateScannerInfoBar(d) {
+  const live = d.squelch;
+
+  setText(D.sibSys, d.systemName  || '—', live);
+  setText(D.sibGrp, d.groupName   || (d.talkgroup ? `TG ${d.talkgroup}` : '—'), live);
+  setText(D.sibChn, d.channelName || '—', live);
+  setText(D.sibMod, d.modulation  || '—', live);
+  setText(D.sibNac, d.p25nac      || '—', false);
+
+  // TX flash — show channel info alongside "TRANSMISSION"
+  if (live) {
+    const parts = [d.channelName, d.groupName, d.systemName].filter(Boolean);
+    const info  = parts.join(' › ') || (d.talkgroup ? `TG ${d.talkgroup}` : '');
+    if (info) {
+      D.txChanInfo.textContent = info;
+      D.txSep.classList.remove('hidden');
+    } else {
+      D.txChanInfo.textContent = '';
+      D.txSep.classList.add('hidden');
+    }
+  }
+}
+
+function setText(el, val, highlight) {
+  el.textContent = val;
+  el.classList.toggle('live', highlight);
+}
+
+function updateFreqFromScanner(d) {
+  if (d.frequency) {
+    D.freqVal.textContent = d.frequency;
+  } else if (d.talkgroup) {
+    D.freqVal.textContent = `TG ${d.talkgroup}`;
+  }
+}
+
+/** Highlight the channel in the sidebar list that matches what the scanner reports. */
+function matchChannelInList(d) {
+  const items = D.channelList.querySelectorAll('.ch-item');
+  items.forEach((item, i) => {
+    const ch = S.channels[i];
+    if (!ch) return;
+
+    // Match by frequency (strip spaces) or by channel/group name (case-insensitive)
+    const freqMatch = ch.frequency && d.frequency &&
+      ch.frequency.replace(/\s/g, '') === d.frequency.replace(/\s/g, '');
+    const nameMatch =
+      (d.channelName && ch.name.toLowerCase() === d.channelName.toLowerCase()) ||
+      (d.groupName   && ch.name.toLowerCase() === d.groupName.toLowerCase());
+
+    item.classList.toggle('active', (freqMatch || nameMatch) && d.squelch);
+  });
+}
+
+function updateSerialDot() {
+  if (!D.sibSerial) return;
+  D.sibSerial.className = 'sib-serial-dot ' + (
+    !S.serialEnabled   ? '' :
+    S.serialConnected  ? 'online' : 'error'
+  );
+  D.sibSerial.title = !S.serialEnabled
+    ? 'Serial: not configured'
+    : S.serialConnected
+      ? 'Serial: connected to BCD996XT'
+      : 'Serial: offline – check USB cable';
 }
 
 // ═══════════════════════════════════════════════════════ CLOCK / UPTIME

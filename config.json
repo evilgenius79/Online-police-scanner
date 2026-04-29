@@ -8,6 +8,10 @@
   "signalThreshold": -45,
   "silenceTimeout": 2000,
 
+  "scannerPort": "/dev/ttyUSB0",
+  "scannerBaud": 115200,
+  "pollInterval": 300,
+
   "scannerName": "City Police Scanner",
   "location": "Your City, State",
 
