@@ -1,0 +1,35 @@
+[Unit]
+Description=Online Police Scanner – Node.js Web Server
+Documentation=https://github.com/evilgenius79/online-police-scanner
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=scanner
+Group=audio
+
+WorkingDirectory=/opt/police-scanner
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=police-scanner
+
+# Allow access to audio devices
+SupplementaryGroups=audio
+
+# Environment
+Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--max-old-space-size=256
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/police-scanner/clips
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

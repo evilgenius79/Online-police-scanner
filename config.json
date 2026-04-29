@@ -1,0 +1,48 @@
+{
+  "port": 3000,
+
+  "audioDevice": "hw:1,0",
+  "bitrate": "128k",
+  "sampleRate": 44100,
+
+  "signalThreshold": -45,
+  "silenceTimeout": 2000,
+
+  "scannerName": "City Police Scanner",
+  "location": "Your City, State",
+
+  "channels": [
+    {
+      "id": 1,
+      "name": "Police Dispatch",
+      "frequency": "155.340 MHz",
+      "department": "City PD",
+      "active": true,
+      "color": "blue"
+    },
+    {
+      "id": 2,
+      "name": "Fire / EMS",
+      "frequency": "154.295 MHz",
+      "department": "Fire Dept",
+      "active": false,
+      "color": "red"
+    },
+    {
+      "id": 3,
+      "name": "Tactical 1",
+      "frequency": "158.730 MHz",
+      "department": "City PD",
+      "active": false,
+      "color": "blue"
+    },
+    {
+      "id": 4,
+      "name": "County Sheriff",
+      "frequency": "460.525 MHz",
+      "department": "Sheriff",
+      "active": false,
+      "color": "green"
+    }
+  ]
+}

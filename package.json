@@ -1,0 +1,18 @@
+{
+  "name": "police-scanner",
+  "version": "1.0.0",
+  "description": "Online Police Scanner – real-time web interface for a hardware police scanner on Orange Pi 4 Pro",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.7.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

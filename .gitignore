@@ -1,17 +1,7 @@
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-.env
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Runtime data
+node_modules/
 clips/
-scanner.db
-scanner.db-journal
-scanner.db-wal
-scanner.db-shm
 *.log
+.env
+config.local.json
+npm-debug.log*
+.DS_Store
